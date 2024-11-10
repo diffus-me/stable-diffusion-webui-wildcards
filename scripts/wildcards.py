@@ -1,11 +1,14 @@
 import os
 import random
 import sys
+import re
 
 from modules import scripts, script_callbacks, shared
 
 warned_about_files = {}
 repo_dir = scripts.basedir()
+
+PATTERN = r"\b__(\w+)__\b"
 
 
 class WildcardsScript(scripts.Script):
@@ -15,9 +18,21 @@ class WildcardsScript(scripts.Script):
     def show(self, is_img2img):
         return scripts.AlwaysVisible
 
+    def _replace_prompt(self, prompt: str, gen: random.Random):
+        def _repl(match: re.Match):
+            name = match.group(1)
+
+            replacement = self.replace_wildcard(name, gen)
+            if replacement is None:
+                return match.group(0)
+
+            return replacement
+
+        return re.sub(PATTERN, _repl, prompt)
+
     def replace_wildcard(self, text, gen):
         if " " in text or len(text) == 0:
-            return text
+            return None
 
         wildcards_dir = shared.cmd_opts.wildcards_dir or os.path.join(repo_dir, "wildcards")
 
@@ -30,7 +45,7 @@ class WildcardsScript(scripts.Script):
                 print(f"File {replacement_file} not found for the __{text}__ wildcard.", file=sys.stderr)
                 warned_about_files[replacement_file] = 1
 
-        return text
+        return None
 
     def replace_prompts(self, prompts, seeds):
         res = []
@@ -39,7 +54,8 @@ class WildcardsScript(scripts.Script):
             gen = random.Random()
             gen.seed(seeds[0 if shared.opts.wildcards_same_seed else i])
 
-            res.append("".join(self.replace_wildcard(chunk, gen) for chunk in text.split("__")))
+            res.append(self._replace_prompt(text, gen))
+            # res.append("".join(self.replace_wildcard(chunk, gen) for chunk in text.split("__")))
 
         return res
 
